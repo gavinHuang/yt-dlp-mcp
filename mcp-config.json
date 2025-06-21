@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "yt-dlp-mcp": {
+      "command": "python",
+      "args": ["-m", "yt_dlp_mcp.server"],
+      "env": {}
+    }
+  }
+}
