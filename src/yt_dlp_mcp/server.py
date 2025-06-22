@@ -51,8 +51,7 @@ class YouTubeDownloader:
         opts.update({
             'skip_download': True,
             'writesubtitles': False,
-            'writeautomaticsub': False,
-        })
+            'writeautomaticsub': False,        })
         
         with yt_dlp.YoutubeDL(opts) as ydl:
             try:
@@ -76,7 +75,7 @@ class YouTubeDownloader:
                     'skip_download': True,
                     'writesubtitles': True,
                     'writeautomaticsub': True,
-                    'subtitleslangs': ['en', 'en-US', 'en-GB'],
+                    'subtitleslangs': ['en'],  # Only download English subtitles to avoid duplicates
                     'subtitlesformat': 'vtt',
                     'outtmpl': os.path.join(temp_dir, '%(title)s.%(ext)s'),
                 })
@@ -97,8 +96,7 @@ class YouTubeDownloader:
                         
                         if not subtitle_files:
                             return f"No transcription available for video: {video_title}"
-                        
-                        # Process the first available subtitle file
+                          # Process the first available subtitle file
                         subtitle_file = subtitle_files[0]
                         transcription = self._process_vtt_file(subtitle_file, keep_timestamps)
                         
@@ -119,6 +117,7 @@ class YouTubeDownloader:
             
             lines = content.split('\n')
             transcription_lines = []
+            seen_lines = set()  # Track seen lines to prevent duplicates
             
             for i, line in enumerate(lines):
                 line = line.strip()
@@ -138,8 +137,12 @@ class YouTubeDownloader:
                     # Clean up HTML tags and formatting
                     clean_line = re.sub(r'<[^>]+>', '', line)
                     clean_line = clean_line.replace('&amp;', '&').replace('&lt;', '<').replace('&gt;', '>')
-                    if clean_line.strip():
-                        transcription_lines.append(clean_line.strip())
+                    clean_line = clean_line.strip()
+                    
+                    # Only add if the line is not empty and hasn't been seen before
+                    if clean_line and clean_line not in seen_lines:
+                        seen_lines.add(clean_line)
+                        transcription_lines.append(clean_line)
             
             return '\n'.join(transcription_lines)
             
