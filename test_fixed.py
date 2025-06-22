@@ -10,22 +10,31 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
 from yt_dlp_mcp.server import YouTubeDownloader
-from youtubesearchpython import VideosSearch, ChannelsSearch, Channel
 
 
 def test_search():
     """Test search functionality"""
     print("Testing search functionality...")
     try:
-        videos_search = VideosSearch("Python programming", limit=2)
-        results = videos_search.result()
+        import yt_dlp
         
-        if results and results.get('result'):
-            print(f"✓ Search successful - found {len(results['result'])} videos")
-            for video in results['result']:
-                print(f"  - {video.get('title', 'Unknown')[:50]}...")
-        else:
-            print("✗ Search failed - no results")
+        search_url = "ytsearch2:Python programming"
+        opts = {
+            'quiet': True,
+            'no_warnings': True,
+            'extract_flat': True,
+        }
+        
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            search_results = ydl.extract_info(search_url, download=False)
+            
+            if search_results and 'entries' in search_results:
+                results = [entry for entry in search_results['entries'] if entry]
+                print(f"✓ Search successful - found {len(results)} videos")
+                for entry in results:
+                    print(f"  - {entry.get('title', 'Unknown')[:50]}...")
+            else:
+                print("✗ Search failed - no results")
     except Exception as e:
         print(f"✗ Search failed with error: {str(e)}")
     print()
@@ -35,22 +44,28 @@ def test_channel():
     """Test channel listing"""
     print("Testing channel listing...")
     try:
-        channel_search = ChannelsSearch("TechCrunch", limit=1)
-        channel_results = channel_search.result()
+        import yt_dlp
         
-        if channel_results and channel_results.get('result'):
-            channel_id = channel_results['result'][0]['id']
-            channel = Channel.get(channel_id)
+        # Test with a known channel URL
+        channel_url = "https://www.youtube.com/@TechCrunch/videos"
+        
+        opts = {
+            'quiet': True,
+            'no_warnings': True,
+            'extract_flat': True,
+            'playlistend': 2,  # Only get first 2 videos
+        }
+        
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            channel_info = ydl.extract_info(channel_url, download=False)
             
-            if channel and channel.get('videos'):
-                videos = list(channel['videos'])[:2]  # Get first 2 videos
+            if channel_info and 'entries' in channel_info:
+                videos = [entry for entry in channel_info['entries'] if entry][:2]
                 print(f"✓ Channel listing successful - found {len(videos)} videos")
                 for video in videos:
                     print(f"  - {video.get('title', 'Unknown')[:50]}...")
             else:
-                print("✗ Could not get channel videos")
-        else:
-            print("✗ Channel not found")
+                print("✗ Channel listing failed - no videos found")
     except Exception as e:
         print(f"✗ Channel listing failed with error: {str(e)}")
     print()
@@ -59,8 +74,8 @@ def test_channel():
 def test_transcription_basic():
     """Test transcription with a known video that should have captions"""
     print("Testing transcription functionality...")
-    # Using a TED Talk which typically has captions
-    test_url = "https://www.youtube.com/watch?v=HyQmDsaoqJU"  # Example TED Talk
+    # Using a more reliable video
+    test_url = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"  # Rick Roll (very stable video)
     
     print(f"Getting transcription for: {test_url}")
     

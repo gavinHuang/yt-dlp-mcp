@@ -17,7 +17,6 @@ from pathlib import Path
 
 import yt_dlp
 from fastmcp import FastMCP
-from youtubesearchpython import VideosSearch, ChannelsSearch, Channel
 
 
 # Initialize FastMCP
@@ -182,22 +181,37 @@ def search_videos(search_terms: str, max_results: int = 10) -> List[Dict[str, st
         List of dictionaries containing video title, URL, and description
     """
     try:
-        videos_search = VideosSearch(search_terms, limit=max_results)
-        results = videos_search.result()
+        # Use yt-dlp to search for videos
+        search_url = f"ytsearch{max_results}:{search_terms}"
         
-        video_list = []
-        for video in results['result']:
-            video_info = {
-                'title': video.get('title', 'Unknown Title'),
-                'url': video.get('link', ''),
-                'description': video.get('descriptionSnippet', [{}])[0].get('text', '') if video.get('descriptionSnippet') else '',
-                'duration': video.get('duration', 'Unknown'),
-                'views': video.get('viewCount', {}).get('text', 'Unknown'),
-                'channel': video.get('channel', {}).get('name', 'Unknown Channel')
-            }
-            video_list.append(video_info)
+        downloader = YouTubeDownloader()
+        opts = downloader.base_opts.copy()
+        opts.update({
+            'extract_flat': True,  # Only extract basic info, don't download
+            'quiet': True,
+        })
         
-        return video_list
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            search_results = ydl.extract_info(search_url, download=False)
+            
+            if not search_results or 'entries' not in search_results:
+                return [{"error": "No search results found"}]
+            
+            video_list = []
+            for entry in search_results['entries']:
+                if entry:  # Some entries might be None
+                    video_info = {
+                        'title': entry.get('title', 'Unknown Title'),
+                        'url': entry.get('url', entry.get('webpage_url', '')),
+                        'description': entry.get('description', '')[:200] + '...' if entry.get('description') else '',
+                        'duration': str(entry.get('duration', 'Unknown')),
+                        'views': str(entry.get('view_count', 'Unknown')),
+                        'channel': entry.get('uploader', 'Unknown Channel')
+                    }
+                    video_list.append(video_info)
+            
+            return video_list
+            
     except Exception as e:
         return [{"error": f"Search failed: {str(e)}"}]
 
@@ -216,48 +230,76 @@ def list_channel_videos(channel_identifier: str, max_videos: int = 10) -> List[D
     """
     try:
         # Handle different channel identifier formats
-        if channel_identifier.startswith('@'):
+        if channel_identifier.startswith('http'):
+            # Direct URL
+            channel_url = channel_identifier
+        elif channel_identifier.startswith('@'):
             # Handle format
-            search_query = channel_identifier
-        elif channel_identifier.startswith('UC') or channel_identifier.startswith('http'):
-            # Channel ID or URL
-            search_query = channel_identifier
+            channel_url = f"https://www.youtube.com/{channel_identifier}"
+        elif channel_identifier.startswith('UC') or channel_identifier.startswith('UU'):
+            # Channel ID
+            channel_url = f"https://www.youtube.com/channel/{channel_identifier}"
         else:
-            # Channel name - search for it first
-            channel_search = ChannelsSearch(channel_identifier, limit=1)
-            channel_results = channel_search.result()
+            # Try searching for the channel name
+            search_url = f"ytsearch1:{channel_identifier} channel"
+            downloader = YouTubeDownloader()
+            opts = downloader.base_opts.copy()
+            opts.update({'extract_flat': True, 'quiet': True})
             
-            if not channel_results['result']:
-                return [{"error": f"Channel '{channel_identifier}' not found"}]
-            
-            search_query = channel_results['result'][0]['id']
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                search_results = ydl.extract_info(search_url, download=False)
+                if not search_results or 'entries' not in search_results or not search_results['entries']:
+                    return [{"error": f"Channel '{channel_identifier}' not found"}]
+                
+                # Get the channel URL from the first video
+                first_entry = search_results['entries'][0]
+                if first_entry and 'channel_url' in first_entry:
+                    channel_url = first_entry['channel_url']
+                else:
+                    return [{"error": f"Could not find channel for '{channel_identifier}'"}]
         
-        # Get channel videos
-        channel = Channel.get(search_query)
+        # Extract channel videos using yt-dlp
+        # Use the channel URL with videos suffix to get recent videos
+        if '/channel/' in channel_url:
+            videos_url = channel_url + '/videos'
+        elif '/@' in channel_url:
+            videos_url = channel_url + '/videos'
+        else:
+            videos_url = channel_url + '/videos'
         
-        if not channel:
-            return [{"error": f"Could not retrieve channel information for '{channel_identifier}'"}]
+        downloader = YouTubeDownloader()
+        opts = downloader.base_opts.copy()
+        opts.update({
+            'extract_flat': True,
+            'quiet': True,
+            'playlistend': max_videos,  # Limit the number of videos
+        })
         
-        videos = []
-        video_count = 0
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            try:
+                channel_info = ydl.extract_info(videos_url, download=False)
+                
+                if not channel_info or 'entries' not in channel_info:
+                    return [{"error": f"Could not retrieve videos for channel '{channel_identifier}'"}]
+                
+                videos = []
+                for entry in channel_info['entries']:
+                    if entry and len(videos) < max_videos:  # Double-check the limit
+                        video_info = {
+                            'title': entry.get('title', 'Unknown Title'),
+                            'url': entry.get('url', entry.get('webpage_url', '')),
+                            'description': entry.get('description', '')[:200] + '...' if entry.get('description') else '',
+                            'duration': str(entry.get('duration', 'Unknown')),
+                            'views': str(entry.get('view_count', 'Unknown')),
+                            'published': entry.get('upload_date', 'Unknown')
+                        }
+                        videos.append(video_info)
+                
+                return videos if videos else [{"error": "No videos found for this channel"}]
+                
+            except Exception as e:
+                return [{"error": f"Failed to extract channel videos: {str(e)}"}]
         
-        # Get videos from the channel
-        for video in channel['videos']:
-            if video_count >= max_videos:
-                break
-            
-            video_info = {
-                'title': video.get('title', 'Unknown Title'),
-                'url': video.get('link', ''),
-                'description': video.get('descriptionSnippet', [{}])[0].get('text', '') if video.get('descriptionSnippet') else '',
-                'duration': video.get('duration', 'Unknown'),
-                'views': video.get('viewCount', {}).get('text', 'Unknown'),
-                'published': video.get('publishedTime', 'Unknown')
-            }
-            videos.append(video_info)
-            video_count += 1
-        
-        return videos
     except Exception as e:
         return [{"error": f"Failed to list channel videos: {str(e)}"}]
 
